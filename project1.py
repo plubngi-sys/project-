@@ -10,6 +10,7 @@ import sys
 import os
 import pymupdf as fitz
 import ollama
+from database.store import Database
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -28,7 +29,7 @@ from PyQt6.QtGui import (
 # เธรดทำงานเบื้องหลังสำหรับ Ollama AI (รองรับการยกเลิกกลางคัน)
 # ==============================================================================
 class OllamaWorker(QThread):
-    finished = pyqtSignal(str)
+    result = pyqtSignal(str)
     error = pyqtSignal(str)
 
     def __init__(self, text, model="qwen2.5:7b"):
@@ -50,7 +51,7 @@ class OllamaWorker(QThread):
                 messages=[{'role': 'user', 'content': prompt}]
             )
             if not self.is_cancelled:
-                self.finished.emit(response['message']['content'])
+                self.result.emit(response['message']['content'])
         except Exception as e:
             if not self.is_cancelled:
                 self.error.emit(str(e))
@@ -60,8 +61,12 @@ class OllamaWorker(QThread):
 # หน้าต่างหลักของโปรแกรม
 # ==============================================================================
 class PDFReaderApp(QMainWindow):
-    def __init__(self):
+    def __init__(self, database=None):
         super().__init__()
+        self.database = database or Database()
+        self.document_id = None
+        self.ai_context = None
+        self.pending_summaries = []
         self.setWindowTitle("Modern PDF Reader & Note Studio (AI Analysis)")
         self.resize(1200, 800)
 
@@ -269,8 +274,24 @@ class PDFReaderApp(QMainWindow):
         ai_btn_layout.addWidget(self.btn_cancel_ai, stretch=1)
         nt_layout.addLayout(ai_btn_layout)
 
+        self.btn_save_note = QPushButton("💾 บันทึกโน้ต (Ctrl+S)")
+        self.btn_save_note.clicked.connect(self.save_current_note)
+        self.btn_save_note.setShortcut(QKeySequence("Ctrl+S"))
+        nt_layout.addWidget(self.btn_save_note)
+
+        self.btn_retry_summary = QPushButton("บันทึกผล AI ที่ค้างอีกครั้ง")
+        self.btn_retry_summary.clicked.connect(self.retry_pending_summaries)
+        self.btn_retry_summary.setEnabled(False)
+        nt_layout.addWidget(self.btn_retry_summary)
+
+        self.txt_summary = QTextEdit()
+        self.txt_summary.setReadOnly(True)
+        self.txt_summary.setPlaceholderText("ผลสรุป AI ของหน้านี้จะแสดงที่นี่")
+        nt_layout.addWidget(QLabel("ผลสรุป AI"))
+        nt_layout.addWidget(self.txt_summary)
+        nt_layout.addWidget(QLabel("โน้ตของคุณ"))
         self.txt_notes = QTextEdit()
-        self.txt_notes.setPlaceholderText("จดสรุปเนื้อหา หรือกดปุ่มด้านบนเพื่อให้ AI ช่วยสรุปเนื้อหาหน้านี้...")
+        self.txt_notes.setPlaceholderText("จดโน้ตของหน้านี้ แล้วกดบันทึกโน้ต")
         self.txt_notes.setStyleSheet("font-size: 13px; padding: 6px;")
         nt_layout.addWidget(self.txt_notes)
         tabs.addTab(note_tab, "📝 โน้ตสรุป")
@@ -311,34 +332,85 @@ class PDFReaderApp(QMainWindow):
         if file_path:
             self.load_pdf(file_path[0])
 
-    def load_pdf(self, path):
+    def save_current_note(self):
+        if self.document_id is None:
+            return False
         try:
-            self.doc = fitz.open(path)
-            self.total_pages = len(self.doc)
-            self.current_page = 0
-            self.current_search_query = ""
+            self.database.save_note(self.document_id, self.current_page + 1,
+                                    self.txt_notes.toPlainText())
+        except Exception:
+            QMessageBox.warning(self, "บันทึกไม่สำเร็จ",
+                                "เชื่อมต่อฐานข้อมูลหรือบันทึกไม่ได้ โน้ตยังอยู่ในช่องเดิม กรุณาลองอีกครั้ง")
+            return False
+        self.txt_notes.document().setModified(False)
+        self.statusBar().showMessage("บันทึกโน้ตเรียบร้อยแล้ว", 4000)
+        return True
 
-            self.spin_page.setMaximum(self.total_pages)
-            self.spin_page.setValue(1)
-            self.lbl_page_total.setText(f"/ {self.total_pages}")
-            self.setWindowTitle(f"PDF Reader - {os.path.basename(path)}")
+    def confirm_note_change(self):
+        if not self.txt_notes.document().isModified():
+            return True
+        answer = QMessageBox.question(
+            self, "มีโน้ตที่ยังไม่บันทึก", "ต้องการบันทึกโน้ตก่อนออกจากหน้านี้หรือไม่?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard |
+            QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Save)
+        if answer == QMessageBox.StandardButton.Save:
+            return self.save_current_note()
+        return answer == QMessageBox.StandardButton.Discard
 
-            self.thumbnail_list.clear()
-            for i in range(self.total_pages):
-                page = self.doc.load_page(i)
-                pix = page.get_pixmap(dpi=36)
-                qimg = QImage(
-                    pix.samples, pix.width, pix.height, pix.stride,
-                    QImage.Format.Format_RGB888
-                )
-                icon = QIcon(QPixmap.fromImage(qimg))
-                item = QListWidgetItem(icon, f"หน้า {i + 1}")
-                self.thumbnail_list.addItem(item)
+    def show_page_data(self, note, summaries):
+        self.txt_notes.setPlainText(note)
+        self.txt_notes.document().setModified(False)
+        self.txt_summary.setPlainText("\n\n".join(
+            f"[{row['model_name']}]\n{row['content']}" for row in summaries))
 
-            self.render_page()
+    def load_pdf(self, path):
+        if not self.confirm_note_change():
+            return
+        candidate = None
+        try:
+            candidate = fitz.open(path)
+            if candidate.needs_pass or len(candidate) == 0:
+                raise ValueError("เอกสารถูกล็อกหรือไม่มีหน้า")
+            document_id = self.database.register_document(path, len(candidate))
+            note = self.database.get_note(document_id, 1)
+            summaries = self.database.list_summaries(document_id, 1)
+            # เตรียมภาพก่อนแทนที่เอกสารเดิม เพื่อเก็บงานเดิมไว้หากเปิดไฟล์ล้มเหลว
+            icons = []
+            for page in candidate:
+                pix = page.get_pixmap(dpi=36, colorspace=fitz.csRGB, alpha=False)
+                qimg = QImage(pix.samples, pix.width, pix.height, pix.stride,
+                              QImage.Format.Format_RGB888)
+                icons.append(QIcon(QPixmap.fromImage(qimg)))
+        except Exception:
+            if candidate is not None:
+                candidate.close()
+            QMessageBox.critical(self, "เปิดเอกสารไม่สำเร็จ",
+                                 "ตรวจสอบไฟล์ PDF การเชื่อมต่อ PostgreSQL และการสร้างตารางก่อนลองใหม่")
+            return
 
-        except Exception as e:
-            QMessageBox.critical(self, "เกิดข้อผิดพลาด", f"ไม่สามารถเปิดไฟล์ได้:\n{str(e)}")
+        previous = self.doc
+        self.doc = candidate
+        self.document_id = document_id
+        self.total_pages = len(candidate)
+        self.current_page = 0
+        self.current_search_query = ""
+        self.txt_search.clear()
+        self.search_results.clear()
+        self.spin_page.blockSignals(True)
+        self.spin_page.setMaximum(self.total_pages)
+        self.spin_page.setValue(1)
+        self.spin_page.blockSignals(False)
+        self.lbl_page_total.setText(f"/ {self.total_pages}")
+        self.setWindowTitle(f"PDF Reader - {os.path.basename(path)}")
+        self.thumbnail_list.blockSignals(True)
+        self.thumbnail_list.clear()
+        for i, icon in enumerate(icons):
+            self.thumbnail_list.addItem(QListWidgetItem(icon, f"หน้า {i + 1}"))
+        self.thumbnail_list.blockSignals(False)
+        self.show_page_data(note, summaries)
+        self.render_page()
+        if previous is not None:
+            previous.close()
 
     def render_page(self):
         if not self.doc or self.current_page >= self.total_pages:
@@ -346,7 +418,7 @@ class PDFReaderApp(QMainWindow):
 
         page = self.doc.load_page(self.current_page)
         zoom_dpi = int(100 * self.zoom_factor)
-        pix = page.get_pixmap(dpi=zoom_dpi)
+        pix = page.get_pixmap(dpi=zoom_dpi, colorspace=fitz.csRGB, alpha=False)
 
         qimg = QImage(
             pix.samples, pix.width, pix.height, pix.stride,
@@ -382,13 +454,34 @@ class PDFReaderApp(QMainWindow):
         self.thumbnail_list.setCurrentRow(self.current_page)
         self.thumbnail_list.blockSignals(False)
 
+    def sync_navigation(self):
+        self.spin_page.blockSignals(True)
+        self.spin_page.setValue(self.current_page + 1)
+        self.spin_page.blockSignals(False)
+        self.thumbnail_list.blockSignals(True)
+        self.thumbnail_list.setCurrentRow(self.current_page)
+        self.thumbnail_list.blockSignals(False)
+
     def go_to_page(self, page_index):
-        if self.doc and 0 <= page_index < self.total_pages:
-            self.current_page = page_index
-            self.spin_page.blockSignals(True)
-            self.spin_page.setValue(page_index + 1)
-            self.spin_page.blockSignals(False)
+        if not self.doc or not 0 <= page_index < self.total_pages:
+            return
+        if page_index == self.current_page:
             self.render_page()
+            return
+        if not self.confirm_note_change():
+            self.sync_navigation()
+            return
+        try:
+            note = self.database.get_note(self.document_id, page_index + 1)
+            summaries = self.database.list_summaries(self.document_id, page_index + 1)
+        except Exception:
+            self.sync_navigation()
+            QMessageBox.warning(self, "โหลดข้อมูลไม่ได้", "ยังอยู่หน้าเดิม กรุณาตรวจสอบ PostgreSQL แล้วลองใหม่")
+            return
+        self.current_page = page_index
+        self.sync_navigation()
+        self.show_page_data(note, summaries)
+        self.render_page()
 
     def prev_page(self):
         if self.current_page > 0:
@@ -457,6 +550,8 @@ class PDFReaderApp(QMainWindow):
     # ระบบควบคุม Ollama AI
     # ==========================================================================
     def analyze_page_with_ollama(self):
+        if self.ai_worker and self.ai_worker.isRunning():
+            return
         if not self.doc:
             QMessageBox.warning(self, "แจ้งเตือน", "กรุณาเปิดไฟล์ PDF ก่อนใช้งาน AI")
             return
@@ -475,38 +570,59 @@ class PDFReaderApp(QMainWindow):
         self.btn_ai.setText("⏳ กำลังวิเคราะห์...")
         self.btn_cancel_ai.setEnabled(True)
 
-        self.txt_notes.append(f"\n--- 🤖 [AI สรุปเนื้อหา หน้า {self.current_page + 1}] ---")
-        self.txt_notes.append("กำลังประมวลผล กรุณารอสักครู่ (กด 'ยกเลิก' ได้)...\n")
-
+        # จับเอกสารและเลขหน้าตอนเริ่มงาน แม้ผู้ใช้จะเปลี่ยนหน้าในระหว่างรอ AI
+        self.ai_context = (self.document_id, self.current_page + 1, "qwen2.5:7b")
+        self.statusBar().showMessage("กำลังวิเคราะห์เนื้อหา...")
         self.ai_worker = OllamaWorker(text=page_text, model="qwen2.5:7b")
-        self.ai_worker.finished.connect(self.on_ai_success)
+        self.ai_worker.result.connect(self.on_ai_success)
         self.ai_worker.error.connect(self.on_ai_failed)
+        self.ai_worker.finished.connect(self.reset_ai_buttons)
         self.ai_worker.start()
 
     def cancel_ai_processing(self):
         if self.ai_worker and self.ai_worker.isRunning():
+            # ไม่บังคับฆ่าเธรด รอคำขอที่ส่งไปจบและไม่รับผลลัพธ์นั้น
             self.ai_worker.is_cancelled = True
-            self.ai_worker.terminate()
-            self.ai_worker.wait(400)
+            self.btn_cancel_ai.setEnabled(False)
+            self.statusBar().showMessage("ยกเลิกการรับผลแล้ว กำลังรอคำขอ AI เดิมสิ้นสุด")
 
-            current_text = self.txt_notes.toPlainText()
-            cleaned_text = current_text.replace(
-                "กำลังประมวลผล กรุณารอสักครู่ (กด 'ยกเลิก' ได้)...\n", ""
-            )
-            self.txt_notes.setText(cleaned_text + "❌ [ยกเลิกการวิเคราะห์โดยผู้ใช้]\n")
-
-        self.reset_ai_buttons()
+    def retry_pending_summaries(self):
+        remaining = []
+        for context, content in self.pending_summaries:
+            try:
+                self.database.add_summary(*context, content)
+            except Exception:
+                remaining.append((context, content))
+        self.pending_summaries = remaining
+        self.btn_retry_summary.setEnabled(bool(remaining))
+        if remaining:
+            QMessageBox.warning(self, "ยังบันทึกไม่ได้", "ผล AI ยังเก็บไว้ในหน่วยความจำ กรุณาลองใหม่ก่อนปิดโปรแกรม")
+        else:
+            self.statusBar().showMessage("บันทึกผล AI ที่ค้างเรียบร้อยแล้ว", 4000)
+        if self.document_id is not None:
+            try:
+                rows = self.database.list_summaries(self.document_id, self.current_page + 1)
+                self.txt_summary.setPlainText("\n\n".join(
+                    f"[{row['model_name']}]\n{row['content']}" for row in rows))
+            except Exception:
+                pass
 
     def on_ai_success(self, summary_text):
-        current_text = self.txt_notes.toPlainText()
-        cleaned_text = current_text.replace(
-            "กำลังประมวลผล กรุณารอสักครู่ (กด 'ยกเลิก' ได้)...\n", ""
-        )
-        self.txt_notes.setText(cleaned_text + summary_text + "\n")
-        self.reset_ai_buttons()
+        if self.ai_worker.is_cancelled:
+            return
+        context = self.ai_context
+        try:
+            self.database.add_summary(*context, summary_text)
+            self.statusBar().showMessage(f"บันทึกผล AI หน้า {context[1]} แล้ว", 4000)
+        except Exception:
+            self.pending_summaries.append((context, summary_text))
+            self.btn_retry_summary.setEnabled(True)
+            QMessageBox.warning(self, "บันทึกผล AI ไม่สำเร็จ",
+                                "ผลยังอยู่ในหน่วยความจำ กดบันทึกผล AI ที่ค้างอีกครั้งก่อนปิดโปรแกรม")
+        if context[:2] == (self.document_id, self.current_page + 1):
+            self.txt_summary.setPlainText(summary_text + "\n\n" + self.txt_summary.toPlainText())
 
     def on_ai_failed(self, error_message):
-        self.reset_ai_buttons()
         QMessageBox.critical(
             self, "เกิดข้อผิดพลาดจาก Ollama",
             f"ไม่สามารถเชื่อมต่อกับ Ollama ได้:\n{error_message}\n\n"
@@ -518,12 +634,39 @@ class PDFReaderApp(QMainWindow):
         self.btn_ai.setText("✨ วิเคราะห์หน้านี้ด้วย AI")
         self.btn_cancel_ai.setEnabled(False)
 
+    def closeEvent(self, event):
+        if self.ai_worker and self.ai_worker.isRunning():
+            QMessageBox.information(self, "AI ยังทำงานอยู่", "กรุณารอคำขอ AI สิ้นสุดก่อนปิดโปรแกรม")
+            event.ignore()
+            return
+        if self.pending_summaries:
+            QMessageBox.warning(self, "ผล AI ยังไม่บันทึก", "กดบันทึกผล AI ที่ค้างอีกครั้งก่อนปิดโปรแกรม")
+            event.ignore()
+            return
+        if not self.confirm_note_change():
+            event.ignore()
+            return
+        if self.doc is not None:
+            self.doc.close()
+        event.accept()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     font = QFont("Helvetica Neue", 10)
     app.setFont(font)
 
-    window = PDFReaderApp()
+    try:
+        database = Database()
+        with database.connect() as connection:
+            connection.execute("SELECT id FROM documents LIMIT 0")
+            connection.execute("SELECT id FROM notes LIMIT 0")
+            connection.execute("SELECT id FROM ai_summaries LIMIT 0")
+        window = PDFReaderApp(database)
+    except Exception:
+        QMessageBox.critical(None, "เชื่อมต่อฐานข้อมูลไม่ได้",
+                             "ตั้ง DATABASE_URL เปิด PostgreSQL และรัน python -m database.init_db ก่อนเริ่มโปรแกรม")
+        sys.exit(1)
     window.show()
     sys.exit(app.exec())
+
