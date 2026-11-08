@@ -6,7 +6,7 @@ from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QListWidget, QTextEdit, QLineEdit, QSplitter, QScrollArea, QTabWidget,
-    QToolBar, QSpinBox, QSizePolicy,
+    QToolBar, QSpinBox, QSizePolicy, QToolButton, QStyle,
 )
 
 
@@ -29,13 +29,13 @@ class ReaderWindow(QMainWindow):
         # 1. แผงซ้าย: Thumbnails
         left_panel = QWidget()
         left_panel.setObjectName("pagesPanel")
-        left_panel.setMinimumWidth(148)
+        left_panel.setMinimumWidth(165)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(12, 18, 12, 12)
         left_layout.addWidget(QLabel("หน้าเอกสาร"))
 
         self.thumbnail_list = QListWidget()
-        self.thumbnail_list.setIconSize(QSize(90, 126))
+        self.thumbnail_list.setIconSize(QSize(110, 155))
         self.thumbnail_list.setSpacing(8)
         self.thumbnail_list.currentRowChanged.connect(self.go_to_page)
         left_layout.addWidget(self.thumbnail_list)
@@ -46,11 +46,15 @@ class ReaderWindow(QMainWindow):
         center_panel.setObjectName("readerPanel")
         center_panel.setMinimumWidth(300)
         center_layout = QVBoxLayout(center_panel)
-        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setContentsMargins(12, 12, 12, 0)
         center_layout.setSpacing(12)
 
         nav_layout = QHBoxLayout()
-        nav_layout.addWidget(QLabel("พื้นที่อ่าน"))
+        self.document_label = QLabel("ยังไม่ได้เปิดเอกสาร")
+        self.document_label.setMinimumWidth(60)
+        self.document_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        nav_layout.addWidget(self.document_label, 1)
+        self.windowTitleChanged.connect(self.update_document_label)
         nav_layout.addStretch()
         self.btn_prev = QPushButton("‹")
         self.btn_prev.setToolTip("หน้าก่อนหน้า")
@@ -73,6 +77,16 @@ class ReaderWindow(QMainWindow):
         self.btn_next.clicked.connect(self.next_page)
         nav_layout.addWidget(self.btn_next)
 
+        for action in self.zoom_actions:
+            button = QToolButton()
+            button.setDefaultAction(action)
+            nav_layout.addWidget(button)
+        fullscreen = QPushButton()
+        fullscreen.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
+        fullscreen.setToolTip("สลับเต็มหน้าจอ")
+        fullscreen.setFixedSize(36, 36)
+        fullscreen.clicked.connect(self.toggle_fullscreen)
+        nav_layout.addWidget(fullscreen)
         center_layout.addLayout(nav_layout)
 
         self.scroll_area = QScrollArea()
@@ -172,7 +186,8 @@ class ReaderWindow(QMainWindow):
         ai_layout.addWidget(self.txt_summary, 1)
         ai_layout.addWidget(self.btn_retry_summary)
         ai_layout.addWidget(self.btn_export_summary)
-        nt_layout.addWidget(QLabel("โน้ตของคุณ"))
+        self.note_page_label = QLabel("โน้ตหน้าที่ 1")
+        nt_layout.addWidget(self.note_page_label)
         self.txt_notes = QTextEdit()
         self.txt_notes.setPlaceholderText("จดโน้ตของหน้านี้ แล้วกดบันทึกโน้ต")
         self.txt_notes.setStyleSheet("font-size: 14px; padding: 12px;")
@@ -192,12 +207,24 @@ class ReaderWindow(QMainWindow):
         self.statusBar().setSizeGripEnabled(False)
         self.statusBar().showMessage("พร้อมเปิดเอกสาร")
 
+    def update_document_label(self, title):
+        filename = title.removeprefix("PDF Reader - ")
+        if title.startswith("PDF Reader - "):
+            self.document_label.setText(filename)
+            self.document_label.setToolTip(filename)
+
+    def toggle_fullscreen(self):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
     def create_toolbar(self):
         toolbar = QToolBar("เครื่องมือหลัก")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        self.open_action = btn_open = QAction("เปิด PDF   Ctrl+O", self)
+        self.open_action = btn_open = QAction("เปิด PDF", self)
         btn_open.setShortcut(QKeySequence("Ctrl+O"))
         btn_open.triggered.connect(self.open_pdf_dialog)
         brand = QLabel("  PDF NOTE STUDIO  ")
@@ -207,18 +234,23 @@ class ReaderWindow(QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
         toolbar.addSeparator()
-        toolbar.addAction(btn_open)
+        open_button = QToolButton()
+        open_button.setObjectName("openPdf")
+        open_button.setDefaultAction(btn_open)
+        open_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+        open_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        toolbar.addWidget(open_button)
 
         toolbar.addSeparator()
 
         btn_zoom_in = QAction("＋", self)
         btn_zoom_in.triggered.connect(self.zoom_in)
-        toolbar.addAction(btn_zoom_in)
+
 
         btn_zoom_out = QAction("−", self)
         btn_zoom_out.triggered.connect(self.zoom_out)
-        toolbar.addAction(btn_zoom_out)
+
 
         btn_zoom_reset = QAction("100%", self)
         btn_zoom_reset.triggered.connect(self.zoom_reset)
-        toolbar.addAction(btn_zoom_reset)
+        self.zoom_actions = [btn_zoom_out, btn_zoom_reset, btn_zoom_in]
