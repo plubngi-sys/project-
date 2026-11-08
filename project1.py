@@ -102,7 +102,7 @@ class PDFReaderApp(QMainWindow):
         self.db_task = None
         self.db_pool = QThreadPool(self)
         self.db_pool.setMaxThreadCount(1)
-        self.setWindowTitle("Modern PDF Reader & Note Studio (AI Analysis)")
+        self.setWindowTitle("PDF Note Studio")
         self.resize(1200, 800)
 
         self.doc = None
@@ -114,6 +114,23 @@ class PDFReaderApp(QMainWindow):
         self.ai_worker = None
 
         self.init_ui()
+        self.setStyleSheet("""
+            QMainWindow, QWidget { background: #f7f8f5; color: #213832; }
+            QToolBar, QToolBar QLabel, QToolButton { background: #163e36; color: white; border: none; padding: 6px; }
+            QToolButton:hover { background: #28584d; }
+            QPushButton { background: white; border: 1px solid #bdcdc6; border-radius: 5px; padding: 6px 9px; }
+            QPushButton:hover { background: #e3efe8; }
+            QPushButton#primary { background: #196650; color: white; font-weight: bold; }
+            QPushButton:disabled, QPushButton#primary:disabled { background: #e7ebe7; color: #67766f; }
+            QTextEdit, QListWidget, QLineEdit, QSpinBox { background: white; border: 1px solid #c7d4cd; border-radius: 5px; padding: 5px; }
+            QTextEdit:focus, QLineEdit:focus { border-color: #197454; }
+            QListWidget::item:selected { background: #dcefe5; color: #153f31; }
+            QTabBar::tab { background: #e8ede8; padding: 8px 12px; }
+            QTabBar::tab:selected { background: white; border-bottom: 3px solid #197454; }
+            QTabWidget::pane { border: 1px solid #c7d4cd; }
+            QScrollArea, QLabel#paper { background: #e4e9e4; }
+            QSplitter::handle { background: #d2dbd4; }
+        """)
         self.update_controls()
 
     def init_ui(self):
@@ -167,6 +184,7 @@ class PDFReaderApp(QMainWindow):
         self.lbl_pdf_page = QLabel("ยังไม่ได้เปิดไฟล์ PDF\nกดที่เมนู 'เปิดไฟล์ PDF' เพื่อเริ่มต้น")
         self.lbl_pdf_page.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_pdf_page.setStyleSheet("color: #666; font-size: 14px;")
+        self.lbl_pdf_page.setObjectName("paper")
         self.scroll_area.setWidget(self.lbl_pdf_page)
         self.scroll_area.setWidgetResizable(True)
         center_layout.addWidget(self.scroll_area)
@@ -191,59 +209,15 @@ class PDFReaderApp(QMainWindow):
         self.txt_search.setPlaceholderText("พิมพ์คำที่ต้องการค้นหา...")
         self.txt_search.returnPressed.connect(self.search_text)
         self.txt_search.setFixedHeight(38)
-        self.txt_search.setStyleSheet("""
-            QLineEdit {
-                background-color: #1e1e1e;
-                color: #ffffff;
-                border: 1px solid #444444;
-                border-radius: 6px;
-                padding: 0 10px;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #007acc;
-            }
-        """)
 
         self.btn_search = QPushButton("🔍 ค้นหา")
         self.btn_search.clicked.connect(self.search_text)
         self.btn_search.setFixedHeight(38)
-        self.btn_search.setStyleSheet("""
-            QPushButton {
-                background-color: #333333;
-                color: #ffffff;
-                border: 1px solid #444444;
-                border-radius: 6px;
-                padding: 0 12px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #444444;
-            }
-            QPushButton:pressed {
-                background-color: #222222;
-            }
-        """)
 
         self.btn_clear_search = QPushButton("✖")
         self.btn_clear_search.setToolTip("ล้างการค้นหาและเอาไฮไลต์ออก")
         self.btn_clear_search.clicked.connect(self.clear_search)
         self.btn_clear_search.setFixedSize(38, 38)
-        self.btn_clear_search.setStyleSheet("""
-            QPushButton {
-                background-color: #333333;
-                color: #ffffff;
-                border: 1px solid #444444;
-                border-radius: 6px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #444444;
-            }
-            QPushButton:pressed {
-                background-color: #222222;
-            }
-        """)
 
         search_bar.addWidget(self.txt_search)
         search_bar.addWidget(self.btn_search)
@@ -264,75 +238,47 @@ class PDFReaderApp(QMainWindow):
 
         self.btn_ai = QPushButton("✨ วิเคราะห์หน้านี้ด้วย AI")
         self.btn_ai.setFixedHeight(38)
-        self.btn_ai.setStyleSheet("""
-            QPushButton {
-                background-color: #2563EB;
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #1D4ED8;
-            }
-            QPushButton:disabled {
-                background-color: #3f3f46;
-                color: #71717a;
-            }
-        """)
         self.btn_ai.clicked.connect(self.analyze_page_with_ollama)
 
         self.btn_cancel_ai = QPushButton("🛑 ยกเลิก")
         self.btn_cancel_ai.setFixedHeight(38)
         self.btn_cancel_ai.setEnabled(False)
-        self.btn_cancel_ai.setStyleSheet("""
-            QPushButton {
-                background-color: #DC2626;
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 13px;
-                padding: 0 14px;
-            }
-            QPushButton:hover {
-                background-color: #B91C1C;
-            }
-            QPushButton:disabled {
-                background-color: #27272a;
-                color: #52525b;
-            }
-        """)
         self.btn_cancel_ai.clicked.connect(self.cancel_ai_processing)
 
         ai_btn_layout.addWidget(self.btn_ai, stretch=3)
         ai_btn_layout.addWidget(self.btn_cancel_ai, stretch=1)
-        nt_layout.addLayout(ai_btn_layout)
+        ai_tab = QWidget()
+        ai_layout = QVBoxLayout(ai_tab)
+        ai_layout.addLayout(ai_btn_layout)
 
         self.btn_save_note = QPushButton("💾 บันทึกโน้ต (Ctrl+S)")
         self.btn_save_note.clicked.connect(self.save_current_note)
         self.btn_save_note.setShortcut(QKeySequence("Ctrl+S"))
-        nt_layout.addWidget(self.btn_save_note)
+        self.btn_save_note.setObjectName("primary")
+        self.btn_ai.setObjectName("primary")
 
         self.btn_retry_summary = QPushButton("บันทึกผล AI ที่ค้างอีกครั้ง")
         self.btn_retry_summary.clicked.connect(self.retry_pending_summaries)
         self.btn_export_summary = QPushButton("ส่งออกผล AI ที่รอบันทึก")
         self.btn_export_summary.clicked.connect(self.export_pending_summaries)
-        nt_layout.addWidget(self.btn_export_summary)
-        nt_layout.addWidget(self.btn_retry_summary)
+
 
         self.txt_summary = QTextEdit()
         self.txt_summary.setReadOnly(True)
         self.txt_summary.setPlaceholderText("ผลสรุป AI ของหน้านี้จะแสดงที่นี่")
-        nt_layout.addWidget(QLabel("ผลสรุป AI"))
-        nt_layout.addWidget(self.txt_summary)
+        ai_layout.addWidget(QLabel("ผลสรุปของหน้านี้"))
+        ai_layout.addWidget(self.txt_summary, 1)
+        ai_layout.addWidget(self.btn_retry_summary)
+        ai_layout.addWidget(self.btn_export_summary)
         nt_layout.addWidget(QLabel("โน้ตของคุณ"))
         self.txt_notes = QTextEdit()
         self.txt_notes.setPlaceholderText("จดโน้ตของหน้านี้ แล้วกดบันทึกโน้ต")
         self.txt_notes.setStyleSheet("font-size: 13px; padding: 6px;")
         nt_layout.addWidget(self.txt_notes)
-        tabs.addTab(note_tab, "📝 โน้ตสรุป")
+        nt_layout.addWidget(self.btn_save_note)
+        tabs.insertTab(0, note_tab, "โน้ต")
+        tabs.insertTab(1, ai_tab, "สรุป AI")
+        tabs.setCurrentWidget(note_tab)
 
         right_layout.addWidget(tabs)
         self.splitter.addWidget(right_panel)
@@ -347,6 +293,8 @@ class PDFReaderApp(QMainWindow):
         self.open_action = btn_open = QAction("📂 เปิดไฟล์ PDF", self)
         btn_open.setShortcut(QKeySequence("Ctrl+O"))
         btn_open.triggered.connect(self.open_pdf_dialog)
+        toolbar.addWidget(QLabel("PDF Note Studio"))
+        toolbar.addSeparator()
         toolbar.addAction(btn_open)
 
         toolbar.addSeparator()
@@ -709,6 +657,8 @@ class PDFReaderApp(QMainWindow):
         self.btn_retry_summary.setText(f"บันทึกผล AI ที่ค้างอีกครั้ง ({count})")
         self.btn_retry_summary.setEnabled(bool(count) and self.db_task is None and not self.db_queue)
         self.btn_export_summary.setEnabled(bool(count))
+        self.btn_retry_summary.setVisible(bool(count))
+        self.btn_export_summary.setVisible(bool(count))
 
     def retry_pending_summaries(self):
         if self.db_task is not None:
@@ -826,7 +776,7 @@ class PDFReaderApp(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    font = QFont("Helvetica Neue", 10)
+    font = QFont("Segoe UI", 10)
     app.setFont(font)
 
     app.setApplicationName("PDFNoteStudio")
