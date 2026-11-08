@@ -35,4 +35,8 @@ CREATE TABLE IF NOT EXISTS ai_summaries (
 );
 CREATE INDEX IF NOT EXISTS ai_summaries_page_idx
     ON ai_summaries(document_id, page_number, id DESC);
+-- อัปเกรดฐานข้อมูลเดิมโดยไม่ลบข้อมูล ใช้รหัสคำขอป้องกันผล AI ซ้ำ
+ALTER TABLE ai_summaries ADD COLUMN IF NOT EXISTS request_id uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS ai_summaries_request_idx ON ai_summaries(request_id);
 COMMIT;
+
