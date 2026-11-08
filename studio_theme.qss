@@ -1,0 +1,15 @@
+QMainWindow, QWidget { background: #f7f8f5; color: #213832; }
+QToolBar, QToolBar QLabel, QToolButton { background: #163e36; color: white; border: none; padding: 6px; }
+QToolButton:hover { background: #28584d; }
+QPushButton { background: white; border: 1px solid #bdcdc6; border-radius: 5px; padding: 6px 9px; }
+QPushButton:hover { background: #e3efe8; }
+QPushButton#primary { background: #196650; color: white; font-weight: bold; }
+QPushButton:disabled, QPushButton#primary:disabled { background: #e7ebe7; color: #67766f; }
+QTextEdit, QListWidget, QLineEdit, QSpinBox { background: white; border: 1px solid #c7d4cd; border-radius: 5px; padding: 5px; }
+QTextEdit:focus, QLineEdit:focus { border-color: #197454; }
+QListWidget::item:selected { background: #dcefe5; color: #153f31; }
+QTabBar::tab { background: #e8ede8; padding: 8px 12px; }
+QTabBar::tab:selected { background: white; border-bottom: 3px solid #197454; }
+QTabWidget::pane { border: 1px solid #c7d4cd; }
+QScrollArea, QLabel#paper { background: #e4e9e4; }
+QSplitter::handle { background: #d2dbd4; }
