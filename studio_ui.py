@@ -6,7 +6,7 @@ from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QListWidget, QTextEdit, QLineEdit, QSplitter, QScrollArea, QTabWidget,
-    QToolBar, QSpinBox, QSizePolicy, QToolButton, QStyle,
+    QComboBox, QToolBar, QSpinBox, QSizePolicy, QToolButton, QStyle,
 )
 
 
@@ -117,6 +117,10 @@ class ReaderWindow(QMainWindow):
         search_tab = QWidget()
         st_layout = QVBoxLayout(search_tab)
         
+        self.search_scope = QComboBox()
+        self.search_scope.addItems(["ข้อความใน PDF ที่เปิดอยู่", "โน้ตและผล AI ทุกชีท"])
+        self.search_scope.currentIndexChanged.connect(self.clear_search)
+        st_layout.addWidget(self.search_scope)
         search_bar = QHBoxLayout()
         search_bar.setSpacing(6)
         search_bar.setContentsMargins(0, 0, 0, 0)

@@ -62,6 +62,23 @@ class PersistenceUITests(unittest.TestCase):
         self.window.ai_worker = SimpleNamespace(is_cancelled=False, isRunning=lambda: False)
         self.window.on_ai_success('ผลที่ต้องเก็บ')
 
+    def test_search_saved_text_opens_other_document_at_match(self):
+        other = Path(self.folder.name) / 'other.pdf'
+        other.write_bytes(self.path.read_bytes())
+        hit = dict(file_name=other.name, file_path=str(other), document_id=20,
+                   page_number=2, kind='ai', excerpt='สรุป JOIN')
+        self.db.search_saved_text.return_value = [hit]
+        self.window.search_scope.setCurrentIndex(1)
+        self.window.txt_search.setText('JOIN')
+        self.window.search_text()
+        self.settle()
+        self.assertIn('ผลสรุป AI', self.window.search_results.item(0).text())
+        self.db.register_document.return_value = 20
+        self.window.on_search_result_clicked(self.window.search_results.item(0))
+        self.settle()
+        self.assertEqual((self.window.document_id, self.window.current_page), (20, 1))
+        self.assertEqual(self.window.txt_search.text(), 'JOIN')
+
     def test_save_and_reload(self):
         self.assertEqual(self.window.txt_notes.toPlainText(), 'โน้ตเดิม')
         self.window.txt_notes.setPlainText('โน้ตใหม่')

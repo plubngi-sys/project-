@@ -62,6 +62,27 @@ class Database:
             ''', (row['id'], total_pages))
             return row['id']
 
+    def search_saved_text(self, term):
+        # ใช้ strpos เพื่อให้ % และ _ เป็นอักขระปกติในการค้นหา
+        with self.connect() as conn:
+            return conn.execute("""
+                WITH entries AS (
+                    SELECT document_id, page_number, content, 'note' AS kind,
+                           updated_at AS saved_at, id FROM notes
+                    UNION ALL
+                    SELECT document_id, page_number, content, 'ai', created_at, id
+                    FROM ai_summaries
+                ), matches AS (
+                    SELECT entries.*, strpos(lower(content), lower(%s)) AS pos
+                    FROM entries
+                )
+                SELECT d.id AS document_id, d.file_path, d.file_name, page_number, kind,
+                       substr(content, greatest(1, pos - 24), 100) AS excerpt
+                FROM matches JOIN documents d ON d.id = matches.document_id
+                WHERE pos > 0
+                ORDER BY saved_at DESC, kind, matches.id DESC LIMIT 101
+            """, (term,)).fetchall()
+
     def list_documents(self):
         with self.connect() as conn:
             return conn.execute('SELECT * FROM documents ORDER BY id DESC').fetchall()
