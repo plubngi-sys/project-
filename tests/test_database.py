@@ -43,6 +43,10 @@ class DatabaseTests(unittest.TestCase):
                 self.assertEqual(len(db.list_summaries(doc_id, 1)), 3)
                 with self.assertRaises(ValueError):
                     db.add_summary(doc_id, 1, 'test', 'ผิดเอกสาร', str(uuid4()), '0' * 64)
+                db.save_note(doc_id, 2, 'ทดสอบ 50%_JOIN')
+                hits = [row for row in db.search_saved_text('%_join')
+                        if row['document_id'] == doc_id]
+                self.assertEqual([(row['page_number'], row['kind']) for row in hits], [(2, 'note')])
                 db.delete_note(doc_id, 1)
                 self.assertEqual(db.get_note(doc_id, 1), '')
                 db.delete_document(doc_id)

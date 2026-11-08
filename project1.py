@@ -119,7 +119,7 @@ class PDFReaderApp(ReaderWindow):
     def update_controls(self):
         busy = self.db_task is not None or bool(self.db_queue)
         for widget in (self.btn_prev, self.btn_next, self.spin_page, self.thumbnail_list,
-                       self.txt_search, self.btn_search, self.btn_clear_search):
+                       self.search_scope, self.txt_search, self.btn_search, self.btn_clear_search):
             widget.setEnabled(not busy)
         self.open_action.setEnabled(not busy)
         self.txt_notes.setReadOnly(busy or self.document_id is None)
@@ -212,7 +212,7 @@ class PDFReaderApp(ReaderWindow):
     def load_pdf(self, path):
         self.after_note_check(lambda: self.load_document_data(path))
 
-    def load_document_data(self, path):
+    def load_document_data(self, path, page_number=1, expected_id=None):
         # ใช้ PyMuPDF ในเธรดหน้าต่าง ส่วน hash และ SQL ทำใน worker
         try:
             candidate = fitz.open(path)
@@ -226,10 +226,12 @@ class PDFReaderApp(ReaderWindow):
             return
         def work():
             document_id = self.database.register_document(path, pages)
+            if expected_id is not None and document_id != expected_id:
+                raise ValueError("ไฟล์ที่ตำแหน่งนี้เปลี่ยนไปแล้ว")
             metadata = self.database.get_document(document_id)
             return (document_id, metadata['file_hash'],
-                    self.database.get_note(document_id, 1),
-                    self.database.list_summaries(document_id, 1))
+                    self.database.get_note(document_id, page_number),
+                    self.database.list_summaries(document_id, page_number))
         def loaded(data):
             # สร้างภาพ Qt ในเธรดหน้าต่างเท่านั้น
             try:
@@ -247,14 +249,15 @@ class PDFReaderApp(ReaderWindow):
             self.doc = candidate
             self.document_id, self.document_hash, note, summaries = data
             self.total_pages = len(candidate)
-            self.current_page = 0
-            self.note_page_label.setText("โน้ตหน้าที่ 1")
+            self.current_page = page_number - 1
+            self.note_page_label.setText(f"โน้ตหน้าที่ {page_number}")
             self.current_search_query = ""
-            self.txt_search.clear()
-            self.search_results.clear()
+            if self.search_scope.currentIndex() == 0:
+                self.txt_search.clear()
+                self.search_results.clear()
             self.spin_page.blockSignals(True)
             self.spin_page.setMaximum(self.total_pages)
-            self.spin_page.setValue(1)
+            self.spin_page.setValue(page_number)
             self.spin_page.blockSignals(False)
             self.lbl_page_total.setText(f"/ {self.total_pages}")
             self.setWindowTitle(f"PDF Reader - {os.path.basename(path)}")
@@ -269,7 +272,10 @@ class PDFReaderApp(ReaderWindow):
                 previous.close()
         def failed(error):
             candidate.close()
-            self.database_error(error)
+            if expected_id is not None and isinstance(error, ValueError):
+                QMessageBox.warning(self, "เปิดผลค้นหาไม่ได้", str(error))
+            else:
+                self.database_error(error)
         self.submit_db(work, loaded, failed)
 
     def render_page(self):
@@ -373,6 +379,11 @@ class PDFReaderApp(ReaderWindow):
 
     def search_text(self):
         query = self.txt_search.text().strip()
+        if self.search_scope.currentIndex() == 1:
+            self.search_results.clear()
+            if query and self.db_task is None:
+                self.submit_db(lambda: self.database.search_saved_text(query), self.show_library_results)
+            return
         if not self.doc or not query:
             return
 
@@ -401,6 +412,19 @@ class PDFReaderApp(ReaderWindow):
             else:
                 self.render_page()
 
+    def show_library_results(self, rows):
+        self.search_results.clear()
+        for row in rows[:100]:
+            kind = "โน้ต" if row["kind"] == "note" else "ผลสรุป AI"
+            snippet = " ".join(row["excerpt"].split())
+            item = QListWidgetItem(f"{row['file_name']} · หน้า {row['page_number']} · {kind}\n{snippet}")
+            item.setData(Qt.ItemDataRole.UserRole, row)
+            self.search_results.addItem(item)
+        if not rows:
+            self.search_results.addItem("ไม่พบคำนี้ในโน้ตหรือผล AI ที่บันทึกไว้")
+        elif len(rows) > 100:
+            self.search_results.addItem("แสดง 100 ผลล่าสุด กรุณาระบุคำค้นให้ละเอียดขึ้น")
+
     def clear_search(self):
         self.current_search_query = ""
         self.txt_search.clear()
@@ -409,7 +433,14 @@ class PDFReaderApp(ReaderWindow):
 
     def on_search_result_clicked(self, item):
         page_num = item.data(Qt.ItemDataRole.UserRole)
-        if page_num is not None:
+        if isinstance(page_num, dict):
+            hit = page_num
+            if hit["document_id"] == self.document_id:
+                self.go_to_page(hit["page_number"] - 1)
+            else:
+                self.after_note_check(lambda: self.load_document_data(
+                    hit["file_path"], hit["page_number"], hit["document_id"]))
+        elif page_num is not None:
             self.go_to_page(page_num)
 
     # ==========================================================================
