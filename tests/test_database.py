@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from uuid import uuid4
 
 import psycopg
 from database.store import Database
@@ -34,6 +35,14 @@ class DatabaseTests(unittest.TestCase):
                 db.add_summary(doc_id, 1, 'qwen2.5:7b', 'ครั้งแรก')
                 db.add_summary(doc_id, 1, 'qwen2.5:7b', 'ครั้งที่สอง')
                 self.assertEqual(len(db.list_summaries(doc_id, 1)), 2)
+                request_id = str(uuid4())
+                file_hash = db.get_document(doc_id)['file_hash']
+                first = db.add_summary(doc_id, 1, 'test', 'ส่งซ้ำ', request_id, file_hash)
+                repeated = db.add_summary(doc_id, 1, 'test', 'ส่งซ้ำ', request_id, file_hash)
+                self.assertEqual(first, repeated)
+                self.assertEqual(len(db.list_summaries(doc_id, 1)), 3)
+                with self.assertRaises(ValueError):
+                    db.add_summary(doc_id, 1, 'test', 'ผิดเอกสาร', str(uuid4()), '0' * 64)
                 db.delete_note(doc_id, 1)
                 self.assertEqual(db.get_note(doc_id, 1), '')
                 db.delete_document(doc_id)
@@ -45,3 +54,4 @@ class DatabaseTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
