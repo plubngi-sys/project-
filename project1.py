@@ -248,6 +248,7 @@ class PDFReaderApp(ReaderWindow):
             self.document_id, self.document_hash, note, summaries = data
             self.total_pages = len(candidate)
             self.current_page = 0
+            self.note_page_label.setText("โน้ตหน้าที่ 1")
             self.current_search_query = ""
             self.txt_search.clear()
             self.search_results.clear()
@@ -339,6 +340,7 @@ class PDFReaderApp(ReaderWindow):
                     self.database.list_summaries(document_id, page_index + 1))
         def loaded(data):
             self.current_page = page_index
+            self.note_page_label.setText(f"โน้ตหน้าที่ {page_index + 1}")
             self.sync_navigation()
             self.show_page_data(*data)
             self.render_page()
