@@ -2,12 +2,121 @@
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QListWidget, QTextEdit, QLineEdit, QSplitter, QScrollArea, QTabWidget,
-    QComboBox, QToolBar, QSpinBox, QSizePolicy, QToolButton, QStyle,
+    QStackedWidget, QComboBox, QToolBar, QSpinBox, QSizePolicy, QToolButton, QStyle,
 )
+
+
+class NoteEditor(QTextEdit):
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.document().isEmpty():
+            return
+        # แสดงเส้นบรรทัดใต้ข้อความแนะนำเฉพาะตอนที่สมุดยังว่าง
+        painter = QPainter(self.viewport())
+        painter.setPen(QColor("#ddd3c8"))
+        step = max(30, self.fontMetrics().height() + 10)
+        for y in range(step + 12, self.viewport().height(), step):
+            painter.drawLine(4, y, self.viewport().width() - 4, y)
+        painter.end()
+
+
+class NotebookIllustration(QWidget):
+    def __init__(self, compact=False):
+        super().__init__()
+        self.compact = compact
+        if compact:
+            self.setFixedSize(40, 36)
+        else:
+            self.setMaximumSize(416, 266)
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        scale = min(self.width() / 400, self.height() / 255)
+        painter.translate((self.width() - 400 * scale) / 2, (self.height() - 255 * scale) / 2)
+        painter.scale(scale, scale)
+
+        # วาดสมุดเป็นเส้นโค้งเพื่อให้ภาพยังคมชัดเมื่อปรับขนาดหน้าต่าง
+        def shape(path, fill, stroke="#695244", width=1.7):
+            painter.setPen(QPen(QColor(stroke), width))
+            painter.fillPath(path, QColor(fill))
+            painter.strokePath(path, painter.pen())
+
+        if not self.compact:
+            painter.save()
+            painter.translate(294, 48)
+            painter.rotate(9)
+            painter.setPen(QPen(QColor("#796658"), 2))
+            painter.setBrush(QColor("#e4be96"))
+            painter.drawRoundedRect(18, -30, 7, 76, 2, 2)
+            painter.setBrush(QColor("#82766a"))
+            painter.drawRoundedRect(5, -21, 8, 64, 3, 3)
+            painter.setBrush(QColor("#f0dfcd"))
+            painter.drawRoundedRect(-7, 20, 53, 67, 9, 9)
+            painter.restore()
+            painter.setPen(QPen(QColor("#bb7859"), 2))
+            stem = QPainterPath()
+            stem.moveTo(65, 188)
+            stem.cubicTo(16, 153, 34, 81, 69, 59)
+            painter.drawPath(stem)
+            for x, y, angle in [(38, 144, -52), (33, 120, 48), (40, 98, -35), (52, 80, 54)]:
+                painter.save()
+                painter.translate(x, y)
+                painter.rotate(angle)
+                leaf = QPainterPath()
+                leaf.moveTo(0, 0)
+                leaf.quadTo(-9, -14, 0, -32)
+                leaf.quadTo(9, -15, 0, 0)
+                shape(leaf, "#d79472", "#bd7858", 1)
+                painter.restore()
+
+        painter.save()
+        if self.compact:
+            painter.translate(-62, -64)
+            painter.scale(1.3, 1.3)
+        else:
+            painter.translate(0, 4)
+            painter.rotate(-4)
+        for side in (-1, 1):
+            painter.save()
+            painter.translate(193, 0)
+            painter.scale(side, 1)
+            page = QPainterPath()
+            page.moveTo(0, 106)
+            page.cubicTo(32, 77, 85, 74, 117, 80)
+            page.lineTo(142, 186)
+            page.cubicTo(88, 178, 39, 184, 0, 211)
+            page.closeSubpath()
+            painter.translate(0, 7)
+            shape(page, "#c27b55")
+            painter.translate(0, -7)
+            shape(page, "#fffaf1", "#88492e" if self.compact else "#604c40",
+                  8 if self.compact else 2)
+            if not self.compact:
+                painter.setPen(QPen(QColor("#d7c3b1"), 1.3))
+                for row in range(5):
+                    line = QPainterPath()
+                    line.moveTo(12, 115 + row * 16)
+                    line.quadTo(60, 88 + row * 16, 108 + row * 3, 94 + row * 16)
+                    painter.drawPath(line)
+            painter.restore()
+        if not self.compact:
+            ribbon = QPainterPath()
+            ribbon.moveTo(189, 107)
+            ribbon.quadTo(196, 154, 194, 208)
+            ribbon.lineTo(206, 227)
+            ribbon.lineTo(196, 222)
+            ribbon.lineTo(193, 229)
+            ribbon.quadTo(184, 200, 185, 110)
+            ribbon.closeSubpath()
+            shape(ribbon, "#bf7652")
+        painter.restore()
+        painter.end()
 
 
 class ReaderWindow(QMainWindow):
@@ -32,7 +141,9 @@ class ReaderWindow(QMainWindow):
         left_panel.setMinimumWidth(165)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(12, 18, 12, 12)
-        left_layout.addWidget(QLabel("หน้าเอกสาร"))
+        pages_title = QLabel("หน้าเอกสาร")
+        pages_title.setObjectName("pagesTitle")
+        left_layout.addWidget(pages_title)
 
         self.thumbnail_list = QListWidget()
         self.thumbnail_list.setIconSize(QSize(110, 155))
@@ -46,7 +157,7 @@ class ReaderWindow(QMainWindow):
         center_panel.setObjectName("readerPanel")
         center_panel.setMinimumWidth(300)
         center_layout = QVBoxLayout(center_panel)
-        center_layout.setContentsMargins(12, 12, 12, 0)
+        center_layout.setContentsMargins(12, 12, 12, 10)
         center_layout.setSpacing(12)
 
         nav_layout = QHBoxLayout()
@@ -55,7 +166,6 @@ class ReaderWindow(QMainWindow):
         self.document_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         nav_layout.addWidget(self.document_label, 1)
         self.windowTitleChanged.connect(self.update_document_label)
-        nav_layout.addStretch()
         self.btn_prev = QPushButton("‹")
         self.btn_prev.setToolTip("หน้าก่อนหน้า")
         self.btn_prev.setFixedSize(36, 36)
@@ -89,15 +199,38 @@ class ReaderWindow(QMainWindow):
         nav_layout.addWidget(fullscreen)
         center_layout.addLayout(nav_layout)
 
+        self.reader_stack = QStackedWidget()
+        welcome = QWidget()
+        welcome.setObjectName("welcome")
+        intro = QVBoxLayout(welcome)
+        intro.setContentsMargins(8, 8, 8, 8)
+        intro.setSpacing(12)
+        intro.addStretch(3)
+        art_row = QHBoxLayout()
+        art_row.addStretch(1)
+        art_row.addWidget(NotebookIllustration(), 8)
+        art_row.addStretch(1)
+        intro.addLayout(art_row, 4)
+        title = QLabel("เปิดเอกสาร PDF")
+        title.setObjectName("welcomeTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        intro.addWidget(title)
+        hint = QLabel("เลือกไฟล์เพื่อเริ่มอ่านและจดบันทึก")
+        hint.setObjectName("welcomeHint")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        intro.addWidget(hint)
+        intro.addStretch(3)
+        self.reader_stack.addWidget(welcome)
+
         self.scroll_area = QScrollArea()
         self.scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_pdf_page = QLabel("เปิดโลกความคิด\nทีละหน้า\n\nเปิดไฟล์ PDF เพื่อเริ่มอ่านและจดบันทึก")
+        self.lbl_pdf_page = QLabel()
         self.lbl_pdf_page.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_pdf_page.setStyleSheet("color: #536279; font-size: 19px; font-weight: 500;")
         self.lbl_pdf_page.setObjectName("paper")
         self.scroll_area.setWidget(self.lbl_pdf_page)
         self.scroll_area.setWidgetResizable(True)
-        center_layout.addWidget(self.scroll_area)
+        self.reader_stack.addWidget(self.scroll_area)
+        center_layout.addWidget(self.reader_stack)
 
         self.splitter.addWidget(center_panel)
 
@@ -192,9 +325,8 @@ class ReaderWindow(QMainWindow):
         ai_layout.addWidget(self.btn_export_summary)
         self.note_page_label = QLabel("โน้ตหน้าที่ 1")
         nt_layout.addWidget(self.note_page_label)
-        self.txt_notes = QTextEdit()
-        self.txt_notes.setPlaceholderText("จดโน้ตของหน้านี้ แล้วกดบันทึกโน้ต")
-        self.txt_notes.setStyleSheet("font-size: 14px; padding: 12px;")
+        self.txt_notes = NoteEditor()
+        self.txt_notes.setPlaceholderText("เปิดเอกสารเพื่อเริ่มจดโน้ต")
         nt_layout.addWidget(self.txt_notes)
         nt_layout.addWidget(self.btn_save_note)
         tabs.insertTab(0, note_tab, "โน้ต")
@@ -231,13 +363,13 @@ class ReaderWindow(QMainWindow):
         self.open_action = btn_open = QAction("เปิด PDF", self)
         btn_open.setShortcut(QKeySequence("Ctrl+O"))
         btn_open.triggered.connect(self.open_pdf_dialog)
-        brand = QLabel("  PDF NOTE STUDIO  ")
+        toolbar.addWidget(NotebookIllustration(compact=True))
+        brand = QLabel("PDF NOTE STUDIO")
         brand.setObjectName("brand")
         toolbar.addWidget(brand)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
-        toolbar.addSeparator()
         open_button = QToolButton()
         open_button.setObjectName("openPdf")
         open_button.setDefaultAction(btn_open)
@@ -246,7 +378,6 @@ class ReaderWindow(QMainWindow):
         toolbar.addWidget(open_button)
         self.add_study_menu(toolbar)
 
-        toolbar.addSeparator()
 
         btn_zoom_in = QAction("＋", self)
         btn_zoom_in.triggered.connect(self.zoom_in)
@@ -257,5 +388,6 @@ class ReaderWindow(QMainWindow):
 
 
         btn_zoom_reset = QAction("100%", self)
+        btn_zoom_reset.setToolTip("คืนขนาดเอกสารเป็น 100%")
         btn_zoom_reset.triggered.connect(self.zoom_reset)
         self.zoom_actions = [btn_zoom_out, btn_zoom_reset, btn_zoom_in]

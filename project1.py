@@ -107,7 +107,7 @@ class PDFReaderApp(StudyTools, ReaderWindow):
         self.doc = None
         self.current_page = 0
         self.total_pages = 0
-        self.zoom_factor = 1.25
+        self.zoom_factor = 1.0
         self.current_search_query = ""
 
         self.ai_worker = None
@@ -124,8 +124,9 @@ class PDFReaderApp(StudyTools, ReaderWindow):
 
     def update_controls(self):
         busy = self.db_task is not None or bool(self.db_queue)
-        for widget in (self.btn_prev, self.btn_next, self.spin_page, self.thumbnail_list,
-                       self.search_scope, self.txt_search, self.btn_search, self.btn_clear_search):
+        for widget in (self.btn_prev, self.btn_next, self.spin_page, self.thumbnail_list, *self.zoom_actions):
+            widget.setEnabled(not busy and self.doc is not None)
+        for widget in (self.search_scope, self.txt_search, self.btn_search, self.btn_clear_search):
             widget.setEnabled(not busy)
         self.open_action.setEnabled(not busy)
         self.txt_notes.setReadOnly(busy or self.document_id is None)
@@ -254,6 +255,7 @@ class PDFReaderApp(StudyTools, ReaderWindow):
             previous = self.doc
             self.doc = candidate
             self.document_id, self.document_hash, note, summaries = data
+            self.txt_notes.setPlaceholderText("จดโน้ตของหน้านี้…")
             self.total_pages = len(candidate)
             self.current_page = page_number - 1
             self.note_page_label.setText(f"โน้ตหน้าที่ {page_number}")
@@ -321,6 +323,8 @@ class PDFReaderApp(StudyTools, ReaderWindow):
                 painter.end()
 
         self.lbl_pdf_page.setPixmap(pixmap)
+        self.reader_stack.setCurrentWidget(self.scroll_area)
+        self.zoom_actions[1].setText(f"{self.zoom_factor:.0%}")
 
         self.thumbnail_list.blockSignals(True)
         self.thumbnail_list.setCurrentRow(self.current_page)
@@ -371,12 +375,12 @@ class PDFReaderApp(StudyTools, ReaderWindow):
 
     def zoom_in(self):
         if self.zoom_factor < 3.0:
-            self.zoom_factor += 0.2
+            self.zoom_factor = min(3.0, round(self.zoom_factor + 0.2, 1))
             self.render_page()
 
     def zoom_out(self):
         if self.zoom_factor > 0.6:
-            self.zoom_factor -= 0.2
+            self.zoom_factor = max(0.6, round(self.zoom_factor - 0.2, 1))
             self.render_page()
 
     def zoom_reset(self):
