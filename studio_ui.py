@@ -244,6 +244,7 @@ class ReaderWindow(QMainWindow):
         open_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
         open_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         toolbar.addWidget(open_button)
+        self.add_study_menu(toolbar)
 
         toolbar.addSeparator()
 
