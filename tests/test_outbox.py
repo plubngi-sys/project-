@@ -21,7 +21,7 @@ class OutboxTests(unittest.TestCase):
             self.assertEqual(len(restored.items()), 1)
             export = Path(folder) / 'result.json'
             restored.export(export)
-            self.assertEqual(json.loads(export.read_text())[0]['content'], 'ข้อความภาษาไทย')
+            self.assertEqual(json.loads(export.read_text(encoding='utf-8'))[0]['content'], 'ข้อความภาษาไทย')
             restored.acknowledge(request_id)
             self.assertEqual(queue.items(), [])
 

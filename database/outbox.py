@@ -19,7 +19,11 @@ class SummaryOutbox:
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=5)
         conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA synchronous=FULL')
+        try:
+            conn.execute('PRAGMA synchronous=FULL')
+        except sqlite3.Error:
+            conn.close()
+            raise
         return conn
 
     def _execute(self, sql, args=(), fetch=False):

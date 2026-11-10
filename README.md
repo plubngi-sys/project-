@@ -1,6 +1,6 @@
 # PDF Note Studio · final_project
 
-[คู่มือเปิดแอปและวิธีใช้งานภาษาไทย](FINAL_PROJECT_TH.md) · [ดาวน์โหลดชุด Windows จาก GitHub Actions หลัง build สำเร็จ](../../actions/workflows/final-project.yml)
+[คู่มือเปิดแอปและวิธีใช้งานภาษาไทย](FINAL_PROJECT_TH.md) · [ดาวน์โหลดชุด Windows จาก GitHub Actions หลัง build สำเร็จ](https://github.com/plubngi-sys/project-/actions/workflows/final-project.yml?query=branch%3Afinal_project)
 
 เปิดจากซอร์สบน Windows ด้วย `Start-PDFNoteStudio.cmd` หรือสร้าง ZIP แบบพร้อมใช้ด้วย `python packaging/build_windows.py`
 

@@ -199,7 +199,7 @@ class PersistenceUITests(unittest.TestCase):
         target = str(Path(self.folder.name) / 'export.json')
         with patch.object(QFileDialog, 'getSaveFileName', return_value=(target, 'JSON')):
             self.window.export_pending_summaries()
-        self.assertIn('ผลที่ต้องเก็บ', Path(target).read_text())
+        self.assertIn('ผลที่ต้องเก็บ', Path(target).read_text(encoding='utf-8'))
         self.assertEqual(self.window.volatile_summaries, [])
         event = QCloseEvent()
         self.window.closeEvent(event)
