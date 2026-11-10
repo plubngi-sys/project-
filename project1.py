@@ -274,10 +274,16 @@ class PDFReaderApp(StudyTools, ReaderWindow):
             for i, icon in enumerate(icons):
                 self.thumbnail_list.addItem(QListWidgetItem(icon, f"หน้า {i + 1}"))
             self.thumbnail_list.blockSignals(False)
-            self.show_page_data(note, summaries)
-            self.render_page()
+            # Show the selected page before restoring notes and the summary history.
+            try:
+                self.render_page()
+            except (RuntimeError, ValueError, MemoryError):
+                self.lbl_pdf_page.setPixmap(icons[self.current_page].pixmap(self.thumbnail_list.iconSize()))
+                self.reader_stack.setCurrentWidget(self.scroll_area)
+                self.statusBar().showMessage("แสดงภาพย่อของหน้านี้ เพราะโหลดภาพขนาดเต็มไม่ได้", 8000)
             if previous is not None:
                 previous.close()
+            self.show_page_data(note, summaries)
         def failed(error):
             candidate.close()
             if expected_id is not None and isinstance(error, ValueError):
