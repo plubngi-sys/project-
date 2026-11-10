@@ -1,4 +1,8 @@
-# PDF Note Studio
+# PDF Note Studio · final_project
+
+[คู่มือเปิดแอปและวิธีใช้งานภาษาไทย](FINAL_PROJECT_TH.md) · [ดาวน์โหลดชุด Windows จาก GitHub Actions หลัง build สำเร็จ](../../actions/workflows/final-project.yml)
+
+เปิดจากซอร์สบน Windows ด้วย `Start-PDFNoteStudio.cmd` หรือสร้าง ZIP แบบพร้อมใช้ด้วย `python packaging/build_windows.py`
 
 โปรแกรมอ่าน PDF ค้นหาคำ จดโน้ตรายหน้า และสรุปภาษาไทยด้วย Ollama พร้อมจัดเก็บข้อมูลใน PostgreSQL
 

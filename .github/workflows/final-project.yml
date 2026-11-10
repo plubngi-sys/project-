@@ -1,0 +1,31 @@
+name: Build final_project for Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [final_project]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python packaging/build_windows.py
+      - name: Test packaged application
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          Expand-Archive final_project-Windows-x64.zip -DestinationPath check
+          & .\check\final_project\runtime\python.exe -m unittest discover -s .\check\final_project\app\tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\check\final_project\runtime\python.exe -c "import OpenPDFStudio; from PyQt6.QtCore import QTimer; from PyQt6.QtWidgets import QApplication, QDialog; from unittest.mock import patch; show=QDialog.exec; exec_dialog=lambda dialog: (QTimer.singleShot(100, dialog.reject), show(dialog))[1]; patcher=patch.object(QDialog, 'exec', exec_dialog); patcher.start(); assert OpenPDFStudio.main() == 0"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final_project-Windows-x64
+          path: check/final_project/
