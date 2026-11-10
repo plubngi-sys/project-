@@ -38,5 +38,17 @@ CREATE INDEX IF NOT EXISTS ai_summaries_page_idx
 -- อัปเกรดฐานข้อมูลเดิมโดยไม่ลบข้อมูล ใช้รหัสคำขอป้องกันผล AI ซ้ำ
 ALTER TABLE ai_summaries ADD COLUMN IF NOT EXISTS request_id uuid;
 CREATE UNIQUE INDEX IF NOT EXISTS ai_summaries_request_idx ON ai_summaries(request_id);
+CREATE TABLE IF NOT EXISTS page_flags (
+    document_id bigint NOT NULL, page_number integer NOT NULL,
+    question text NOT NULL, resolved boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (document_id, page_number),
+    FOREIGN KEY (document_id, page_number) REFERENCES document_pages ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS flashcards (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    document_id bigint NOT NULL, page_number integer NOT NULL,
+    question text NOT NULL, answer text NOT NULL, remembered boolean NOT NULL DEFAULT false,
+    FOREIGN KEY (document_id, page_number) REFERENCES document_pages ON DELETE CASCADE
+);
 COMMIT;
 

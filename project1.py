@@ -19,6 +19,7 @@ from database.outbox import SummaryOutbox
 from background import DatabaseTask
 
 from studio_ui import ReaderWindow
+from study_tools import StudyTools
 from PyQt6.QtWidgets import QApplication, QFileDialog, QListWidgetItem, QMessageBox
 from PyQt6.QtCore import Qt, QRectF, QThread, pyqtSignal, pyqtSlot, QThreadPool, QStandardPaths, QTimer
 from PyQt6.QtGui import QPixmap, QImage, QIcon, QFont, QPainter, QColor
@@ -31,9 +32,10 @@ class OllamaWorker(QThread):
     result = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, text, model="qwen2.5:7b", timeout=120):
+    def __init__(self, text, model="qwen2.5:7b", timeout=120, question=False):
         super().__init__()
         self.text, self.model, self.timeout = text, model, timeout
+        self.question = question
         self.is_cancelled = False
         self.loop = None
         self.task = None
@@ -57,7 +59,8 @@ class OllamaWorker(QThread):
         # ยกเลิกคำขอ HTTP ได้ และกำหนดทั้งเวลารอเครือข่ายกับเวลารวมของงาน
         async with ollama.AsyncClient(timeout=self.timeout, trust_env=False) as client:
             response = await asyncio.wait_for(client.chat(
-                model=self.model, messages=[{'role': 'user', 'content': prompt}]),
+                model=self.model, messages=[{'role': 'user', 'content': self.text if self.question else prompt}],
+                **({'format': 'json'} if self.question else {})),
                 timeout=self.timeout)
             if not self.is_cancelled:
                 self.result.emit(response['message']['content'])
@@ -80,7 +83,10 @@ class OllamaWorker(QThread):
 # ==============================================================================
 # หน้าต่างหลักของโปรแกรม
 # ==============================================================================
-class PDFReaderApp(ReaderWindow):
+class PDFReaderApp(StudyTools, ReaderWindow):
+    def question_worker(self, prompt):
+        return OllamaWorker(prompt, question=True)
+
     def __init__(self, database=None, outbox=None):
         super().__init__()
         self.database = database or Database()
@@ -101,7 +107,7 @@ class PDFReaderApp(ReaderWindow):
         self.doc = None
         self.current_page = 0
         self.total_pages = 0
-        self.zoom_factor = 1.25
+        self.zoom_factor = 1.0
         self.current_search_query = ""
 
         self.ai_worker = None
@@ -118,8 +124,9 @@ class PDFReaderApp(ReaderWindow):
 
     def update_controls(self):
         busy = self.db_task is not None or bool(self.db_queue)
-        for widget in (self.btn_prev, self.btn_next, self.spin_page, self.thumbnail_list,
-                       self.search_scope, self.txt_search, self.btn_search, self.btn_clear_search):
+        for widget in (self.btn_prev, self.btn_next, self.spin_page, self.thumbnail_list, *self.zoom_actions):
+            widget.setEnabled(not busy and self.doc is not None)
+        for widget in (self.search_scope, self.txt_search, self.btn_search, self.btn_clear_search):
             widget.setEnabled(not busy)
         self.open_action.setEnabled(not busy)
         self.txt_notes.setReadOnly(busy or self.document_id is None)
@@ -248,6 +255,7 @@ class PDFReaderApp(ReaderWindow):
             previous = self.doc
             self.doc = candidate
             self.document_id, self.document_hash, note, summaries = data
+            self.txt_notes.setPlaceholderText("จดโน้ตของหน้านี้…")
             self.total_pages = len(candidate)
             self.current_page = page_number - 1
             self.note_page_label.setText(f"โน้ตหน้าที่ {page_number}")
@@ -266,10 +274,16 @@ class PDFReaderApp(ReaderWindow):
             for i, icon in enumerate(icons):
                 self.thumbnail_list.addItem(QListWidgetItem(icon, f"หน้า {i + 1}"))
             self.thumbnail_list.blockSignals(False)
-            self.show_page_data(note, summaries)
-            self.render_page()
+            # Show the selected page before restoring notes and the summary history.
+            try:
+                self.render_page()
+            except (RuntimeError, ValueError, MemoryError):
+                self.lbl_pdf_page.setPixmap(icons[self.current_page].pixmap(self.thumbnail_list.iconSize()))
+                self.reader_stack.setCurrentWidget(self.scroll_area)
+                self.statusBar().showMessage("แสดงภาพย่อของหน้านี้ เพราะโหลดภาพขนาดเต็มไม่ได้", 8000)
             if previous is not None:
                 previous.close()
+            self.show_page_data(note, summaries)
         def failed(error):
             candidate.close()
             if expected_id is not None and isinstance(error, ValueError):
@@ -315,6 +329,8 @@ class PDFReaderApp(ReaderWindow):
                 painter.end()
 
         self.lbl_pdf_page.setPixmap(pixmap)
+        self.reader_stack.setCurrentWidget(self.scroll_area)
+        self.zoom_actions[1].setText(f"{self.zoom_factor:.0%}")
 
         self.thumbnail_list.blockSignals(True)
         self.thumbnail_list.setCurrentRow(self.current_page)
@@ -365,12 +381,12 @@ class PDFReaderApp(ReaderWindow):
 
     def zoom_in(self):
         if self.zoom_factor < 3.0:
-            self.zoom_factor += 0.2
+            self.zoom_factor = min(3.0, round(self.zoom_factor + 0.2, 1))
             self.render_page()
 
     def zoom_out(self):
         if self.zoom_factor > 0.6:
-            self.zoom_factor -= 0.2
+            self.zoom_factor = max(0.6, round(self.zoom_factor - 0.2, 1))
             self.render_page()
 
     def zoom_reset(self):

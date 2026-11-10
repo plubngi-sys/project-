@@ -133,3 +133,41 @@ class Database:
         with self.connect() as conn:
             conn.execute('DELETE FROM documents WHERE id=%s', (document_id,))
 
+
+    def flag_page(self, doc, page, question):
+        with self.connect() as conn:
+            conn.execute("""INSERT INTO page_flags(document_id,page_number,question)
+                VALUES (%s,%s,%s) ON CONFLICT(document_id,page_number)
+                DO UPDATE SET question=EXCLUDED.question, resolved=false""", (doc,page,question))
+
+    def flags(self):
+        with self.connect() as conn:
+            return conn.execute("""SELECT f.*, d.file_name, d.file_path FROM page_flags f
+                JOIN documents d ON d.id=f.document_id ORDER BY resolved,file_name,page_number""").fetchall()
+
+    def resolve_flag(self, doc, page, resolved):
+        with self.connect() as conn:
+            conn.execute("UPDATE page_flags SET resolved=%s WHERE document_id=%s AND page_number=%s",
+                         (resolved,doc,page))
+
+    def create_card(self, doc, page, question, answer):
+        with self.connect() as conn:
+            conn.execute("INSERT INTO flashcards(document_id,page_number,question,answer) VALUES (%s,%s,%s,%s)",
+                         (doc,page,question,answer))
+
+    def cards(self):
+        with self.connect() as conn:
+            return conn.execute("""SELECT f.*, d.file_name FROM flashcards f JOIN documents d
+                ON d.id=f.document_id ORDER BY remembered,f.id""").fetchall()
+
+    def rate_card(self, card_id, remembered):
+        with self.connect() as conn:
+            conn.execute("UPDATE flashcards SET remembered=%s WHERE id=%s", (remembered,card_id))
+
+    def exam_entries(self):
+        with self.connect() as conn:
+            return conn.execute("""SELECT d.file_name, p.page_number, p.kind, p.content FROM (
+                SELECT document_id,page_number,'โน้ต' AS kind,content FROM notes
+                UNION ALL SELECT document_id,page_number,'ผล AI',content FROM ai_summaries
+                ) p JOIN documents d ON d.id=p.document_id WHERE trim(p.content)<>''
+                ORDER BY d.file_name,p.page_number,p.kind""").fetchall()
